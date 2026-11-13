@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 VERSION = "1.0.0"
 ROLE_VARIABLE = "user.tabspace_role"
 ROLE_OVERVIEW = "overview"
+AUTO_COLOR_VARIABLE = "user.tabspace_auto_color"  # "r,g,b" Tabspace chose itself
 OVERVIEW_TITLE = "Tabspace"
 CONFIG_PATH = os.path.expanduser("~/.config/tabspace/config.json")
 DEFAULT_CONFIG = {
@@ -444,6 +445,60 @@ def latest_line_range(contents, rows: int) -> range:
     return range(max(0, end - rows), end)
 
 
+# Vivid colors that read well on dark and light tab bars. The Tabspace tab
+# takes the one furthest from every color your other tabs use.
+OVERVIEW_PALETTE = [
+    (155, 89, 182),   # purple
+    (26, 188, 156),   # teal
+    (232, 67, 147),   # magenta
+    (52, 152, 219),   # blue
+    (230, 126, 34),   # orange
+    (46, 204, 113),   # green
+    (241, 196, 15),   # yellow
+    (231, 76, 60),    # red
+    (0, 206, 209),    # cyan
+    (99, 102, 241),   # indigo
+    (163, 230, 53),   # lime
+    (255, 121, 198),  # pink
+]
+# Colors closer than this (CIELAB ΔE) are treated as "the same color".
+MIN_COLOR_DISTANCE = 30.0
+
+
+def _srgb_to_lab(rgb: tuple) -> tuple:
+    def lin(c: float) -> float:
+        c /= 255.0
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (lin(v) for v in rgb)
+    x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+
+    def f(t: float) -> float:
+        return t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116
+
+    fx, fy, fz = f(x), f(y), f(z)
+    return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+
+def color_distance(a: tuple, b: tuple) -> float:
+    """Perceptual color difference (CIE76 ΔE in CIELAB)."""
+    la, lb = _srgb_to_lab(a), _srgb_to_lab(b)
+    return sum((p - q) ** 2 for p, q in zip(la, lb)) ** 0.5
+
+
+def color_is_distinct(color, used: list) -> bool:
+    return all(color_distance(color, u) >= MIN_COLOR_DISTANCE for u in used)
+
+
+def pick_distinct_color(used: list, palette: list = OVERVIEW_PALETTE) -> tuple:
+    """Palette color furthest from all used colors (first palette color if none used)."""
+    if not used:
+        return palette[0]
+    return max(palette, key=lambda c: (min(color_distance(c, u) for u in used), -palette.index(c)))
+
+
 # ---------------------------------------------------------------------------
 # Service (runs inside iTerm2's Python runtime).
 # ---------------------------------------------------------------------------
@@ -544,6 +599,7 @@ class Service:
         if overview is not None:
             await overview.async_activate(select_tab=True, order_window_front=True)
             await self.app.async_activate()
+            await self.ensure_overview_color(overview)
             self.wake.set()
             return
         await self.create_overview()
@@ -566,6 +622,7 @@ class Service:
         self.overview_sessions.add(session.session_id)
         await session.async_set_variable(ROLE_VARIABLE, ROLE_OVERVIEW)
         await tab.async_set_title(OVERVIEW_TITLE)
+        await self.ensure_overview_color(session)
         await self.app.async_activate()
 
     # -- snapshot ------------------------------------------------------------
@@ -636,6 +693,46 @@ class Service:
             tiles.append(Tile(tab.tab_id, title, self.build_node(tab.root, contents), busy, label,
                               color))
         return tiles
+
+    async def ensure_overview_color(self, session) -> None:
+        """Give the Tabspace tab a tab color no other tab uses.
+
+        Only the Tabspace tab's own session-local profile is changed. A color
+        Tabspace picked is always moved to the best choice; a color the user
+        picked is kept unless it clashes with another tab.
+        """
+        import iterm2
+
+        try:
+            _, overview_tab = self.app.get_window_and_tab_for_session(session)
+            if overview_tab is None:
+                return
+            dark = await self.dark_mode()
+            others = [t for w in self.app.terminal_windows for t in w.tabs
+                      if not self.is_overview_tab(t)]
+            used = [c for c in await asyncio.gather(*(self.tab_color(t, dark) for t in others)) if c]
+            current = await self.tab_color(overview_tab, dark)
+            best = pick_distinct_color(used)
+            auto = await session.async_get_variable(AUTO_COLOR_VARIABLE)
+            auto_picked = current is not None and (
+                auto == "%d,%d,%d" % current or (not auto and current in OVERVIEW_PALETTE))
+            if current == best:
+                return
+            if current is not None and not auto_picked and color_is_distinct(current, used):
+                return  # the user's own choice, and it doesn't clash
+            r, g, b = best
+            color = iterm2.Color(r, g, b)
+            profile = iterm2.LocalWriteOnlyProfile()
+            for setter in (profile.set_tab_color, profile.set_tab_color_light,
+                           profile.set_tab_color_dark):
+                setter(color)
+            for setter in (profile.set_use_tab_color, profile.set_use_tab_color_light,
+                           profile.set_use_tab_color_dark):
+                setter(True)
+            await session.async_set_profile_properties(profile)
+            await session.async_set_variable(AUTO_COLOR_VARIABLE, "%d,%d,%d" % best)
+        except Exception as e:  # noqa: BLE001
+            log(f"could not set the Tabspace tab color: {e!r}")
 
     async def dark_mode(self) -> bool:
         try:
@@ -711,6 +808,7 @@ class Service:
                     _, tab = self.app.get_window_and_tab_for_session(session)
                     if tab is not None:
                         await tab.async_set_title(OVERVIEW_TITLE)
+                        await self.ensure_overview_color(session)
             state.last_frame = None
             self.wake.set()
         elif kind == "click":

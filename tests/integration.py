@@ -159,6 +159,35 @@ async def main(connection):
                 break
         check("colored tab's title/border use its tab color", found_rgb == tab_rgb, str(found_rgb))
 
+        # --- the Tabspace tab gets a tab color no other tab uses -----------------
+        def rgb_of(c):
+            return None if c is None else tuple(round(v) for v in (c.red, c.green, c.blue))
+
+        async def overview_color():
+            prof = await ov.async_get_profile()
+            return rgb_of(prof.tab_color) if prof.use_tab_color else None
+
+        ov_rgb = await overview_color()
+        check("Tabspace tab has its own tab color", ov_rgb is not None)
+        check("Tabspace tab color differs from the colored test tab",
+              ov_rgb is not None and ts.color_is_distinct(ov_rgb, [tab_rgb]), str(ov_rgb))
+        # Make a test tab steal that color, then reopen Tabspace: it must re-pick.
+        if ov_rgb is not None:
+            lp2 = iterm2.LocalWriteOnlyProfile()
+            for setter in (lp2.set_tab_color, lp2.set_tab_color_light, lp2.set_tab_color_dark):
+                setter(iterm2.Color(*ov_rgb))
+            for setter in (lp2.set_use_tab_color, lp2.set_use_tab_color_light, lp2.set_use_tab_color_dark):
+                setter(True)
+            await gamma.current_session.async_set_profile_properties(lp2)
+            await gamma.async_activate()
+            await asyncio.sleep(0.5)
+            await iterm2.async_invoke_function(connection, "tabspace_toggle()")
+            await asyncio.sleep(1.5)
+            new_rgb = await overview_color()
+            check("Tabspace tab re-picks a color when another tab takes its color",
+                  new_rgb is not None and ts.color_is_distinct(new_rgb, [tab_rgb, ov_rgb]),
+                  f"{ov_rgb} -> {new_rgb}")
+
         # --- live updates -------------------------------------------------------
         await asyncio.sleep(2.5)
         _, text2 = await overview_text(app)

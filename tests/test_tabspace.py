@@ -147,6 +147,31 @@ class TabColorTests(unittest.TestCase):
         self.assertEqual(screen.count("●"), 1)
 
 
+class DistinctColorTests(unittest.TestCase):
+    def test_no_used_colors_picks_first_palette_color(self):
+        self.assertEqual(ts.pick_distinct_color([]), ts.OVERVIEW_PALETTE[0])
+
+    def test_avoids_used_colors(self):
+        used = [ts.OVERVIEW_PALETTE[0], (230, 120, 20), (40, 200, 110)]
+        pick = ts.pick_distinct_color(used)
+        self.assertTrue(ts.color_is_distinct(pick, used))
+        self.assertNotIn(pick, used)
+
+    def test_similar_shade_counts_as_used(self):
+        # A slightly different purple must still rule out the palette purple.
+        pick = ts.pick_distinct_color([(150, 92, 178)])
+        self.assertNotEqual(pick, ts.OVERVIEW_PALETTE[0])
+
+    def test_every_palette_color_used_still_returns_a_palette_color(self):
+        pick = ts.pick_distinct_color(list(ts.OVERVIEW_PALETTE))
+        self.assertIn(pick, ts.OVERVIEW_PALETTE)
+
+    def test_distance_symmetric_and_zero(self):
+        a, b = (10, 20, 30), (200, 100, 0)
+        self.assertEqual(ts.color_distance(a, a), 0)
+        self.assertAlmostEqual(ts.color_distance(a, b), ts.color_distance(b, a))
+
+
 class CropTests(unittest.TestCase):
     def test_crop_wide_chars(self):
         text, used = ts.crop_runs([("漢字テスト", "31", 10)], 5)
