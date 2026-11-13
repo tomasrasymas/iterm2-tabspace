@@ -250,6 +250,13 @@ class LatestLinesTests(unittest.TestCase):
         c = self.Contents(["a", "", "", ""], cursor_y=3, above=100)
         self.assertEqual(list(ts.latest_line_range(c, 10)), [0, 1, 2, 3])
 
+    def test_cursor_past_screen_ignored(self):
+        # After clear-screen redraws (watch, kubectl -w) iTerm2 can report a
+        # cursor row far below the screen; the text must still be shown.
+        lines = ["NAME", "api", "web", "redis"] + [""] * 14
+        c = self.Contents(lines, cursor_y=40)
+        self.assertEqual(list(ts.latest_line_range(c, 3)), [1, 2, 3])
+
 
 class ConfigTests(unittest.TestCase):
     def test_defaults_and_overrides(self):

@@ -438,7 +438,11 @@ def latest_line_range(contents, rows: int) -> range:
             last = i
             break
     try:
-        last = max(last, contents.cursor_coord.y - contents.number_of_lines_above_screen)
+        cursor = contents.cursor_coord.y - contents.number_of_lines_above_screen
+        # After clear-screen redraws iTerm2 can report a cursor row past the
+        # screen; only trust a cursor that is actually on it.
+        if 0 <= cursor < n:
+            last = max(last, cursor)
     except Exception:  # noqa: BLE001
         pass
     end = min(n, last + 1)
