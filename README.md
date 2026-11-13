@@ -97,9 +97,16 @@ and enter `tabspace_toggle()`.
 
 ## Uninstall
 
+**From a clone or the release zip:**
+
 ```sh
 ./uninstall.sh
-# or: curl -fsSL https://raw.githubusercontent.com/tomasrasymas/iterm2-tabspace/main/uninstall.sh | bash
+```
+
+**One-liner** (after the repo is published):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tomasrasymas/iterm2-tabspace/main/uninstall.sh | bash
 ```
 
 This closes Tabspace tabs, stops the service, and removes the script and
