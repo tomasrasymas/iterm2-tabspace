@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 VERSION = "1.0.0"
 ROLE_VARIABLE = "user.tabspace_role"
 ROLE_OVERVIEW = "overview"
-OVERVIEW_TITLE = "Overview"
+OVERVIEW_TITLE = "Tabspace"
 CONFIG_PATH = os.path.expanduser("~/.config/tabspace/config.json")
 DEFAULT_CONFIG = {
     # Global shortcut handled by the service. Set to null/"" to disable it and
@@ -105,6 +105,7 @@ class Tile:
     root: object  # PaneNode | SplitNode
     busy: bool = False
     window_label: str = ""
+    color: tuple | None = None  # the tab's iTerm2 tab color as (r, g, b), if set
 
 
 @dataclass
@@ -216,6 +217,7 @@ BORDER_IDLE = "90"  # bright black / grey
 BORDER_BUSY = "32"  # green
 BORDER_TITLE = "1"
 DIVIDER = "90"
+BUSY_MARKER = "●"
 
 
 def fit(text: str, width: int) -> tuple[str, int]:
@@ -236,13 +238,21 @@ def fit(text: str, width: int) -> tuple[str, int]:
     return "".join(out), used
 
 
-def draw_box(c: Canvas, x: int, y: int, w: int, h: int, color: str, title: str) -> None:
+def draw_box(c: Canvas, x: int, y: int, w: int, h: int, color: str, title: str,
+             marker: str = "", marker_color: str = "") -> None:
+    """Box with a bold title in the border color and an optional colored marker."""
     if w < 2 or h < 2:
         return
     inner = w - 2
-    label, label_w = fit(f" {title} ", inner) if title else ("", 0)
-    c.put(x, y, sgr(color) + "┌" + sgr(color + ";" + BORDER_TITLE) + label
-          + sgr(color) + "─" * (inner - label_w) + "┐")
+    top = sgr(color) + "┌"
+    used = 0
+    if marker and inner >= 4:
+        top += sgr(color) + " " + sgr(marker_color + ";" + BORDER_TITLE) + marker
+        used = 1 + char_width(marker)
+    label, label_w = fit(f" {title} ", inner - used) if title else ("", 0)
+    top += sgr(color + ";" + BORDER_TITLE) + label
+    used += label_w
+    c.put(x, y, top + sgr(color) + "─" * (inner - used) + "┐")
     for row in range(1, h - 1):
         c.put(x, y + row, sgr(color) + "│")
         c.put(x + w - 1, y + row, sgr(color) + "│")
@@ -309,7 +319,12 @@ def render(tiles: list, width: int, height: int) -> tuple[str, list]:
         h = th if row < rows - 1 else height - y
         number = f"{i + 1} " if i < 9 else ""
         title = f"{number}{tile.window_label}{tile.title}"
-        draw_box(c, x, y, w, h, BORDER_BUSY if tile.busy else BORDER_IDLE, title)
+        if tile.color:
+            border = "38;2;%d;%d;%d" % tile.color
+        else:
+            border = BORDER_BUSY if tile.busy else BORDER_IDLE
+        draw_box(c, x, y, w, h, border, title,
+                 BUSY_MARKER if tile.busy else "", BORDER_BUSY)
         # The whole tile (border included) switches to the tab; the panes
         # inside additionally focus the clicked pane.
         hits.append(Hit(x, y, x + w, y + h, tile.tab_id, None))
@@ -601,9 +616,11 @@ class Service:
         results = await asyncio.gather(*(self.read_session(s) for s in sessions))
         contents = {s.session_id: r for s, r in zip(sessions, results)}
         titles = await asyncio.gather(*(self.tab_title(tab) for _, _, tab in tabs))
+        dark = await self.dark_mode()
+        colors = await asyncio.gather(*(self.tab_color(tab, dark) for _, _, tab in tabs))
         now = time.monotonic()
         tiles = []
-        for (wi, window, tab), title in zip(tabs, titles):
+        for (wi, window, tab), title, color in zip(tabs, titles, colors):
             busy = False
             for s in tab.sessions:
                 sc = contents.get(s.session_id)
@@ -616,8 +633,33 @@ class Service:
                 if now - self.last_change.get(s.session_id, -1e9) < self.config["activity_seconds"]:
                     busy = True
             label = f"W{wi + 1} · " if len(windows) > 1 else ""
-            tiles.append(Tile(tab.tab_id, title, self.build_node(tab.root, contents), busy, label))
+            tiles.append(Tile(tab.tab_id, title, self.build_node(tab.root, contents), busy, label,
+                              color))
         return tiles
+
+    async def dark_mode(self) -> bool:
+        try:
+            return "dark" in await self.app.async_get_theme()
+        except Exception:  # noqa: BLE001
+            return True
+
+    async def tab_color(self, tab, dark: bool):
+        """The tab color iTerm2 shows for this tab (from its active pane), or None."""
+        session = tab.current_session
+        if session is None:
+            return None
+        try:
+            profile = await session.async_get_profile()
+            if profile.use_separate_colors_for_light_and_dark_mode:
+                use = profile.use_tab_color_dark if dark else profile.use_tab_color_light
+                color = profile.tab_color_dark if dark else profile.tab_color_light
+            else:
+                use, color = profile.use_tab_color, profile.tab_color
+        except Exception:  # noqa: BLE001
+            return None
+        if not use or color is None:
+            return None
+        return tuple(max(0, min(255, round(v))) for v in (color.red, color.green, color.blue))
 
     async def tab_title(self, tab) -> str:
         try:
@@ -658,11 +700,17 @@ class Service:
             sid = str(msg.get("session_id") or "")
             if kind == "hello" and sid:
                 state.session_id = sid
+                session = self.app.get_session_by_id(sid)
                 if sid not in self.overview_sessions:
                     self.overview_sessions.add(sid)
-                    session = self.app.get_session_by_id(sid)
                     if session is not None:
                         await session.async_set_variable(ROLE_VARIABLE, ROLE_OVERVIEW)
+                if session is not None:
+                    # Keep the tab name current (also renames tabs opened by
+                    # older versions, e.g. "Overview" -> "Tabspace").
+                    _, tab = self.app.get_window_and_tab_for_session(session)
+                    if tab is not None:
+                        await tab.async_set_title(OVERVIEW_TITLE)
             state.last_frame = None
             self.wake.set()
         elif kind == "click":

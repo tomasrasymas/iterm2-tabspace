@@ -127,6 +127,26 @@ class RenderTests(unittest.TestCase):
         self.assertIn("too small", "\n".join(screen_from_frame(frame, 40, 8)))
 
 
+class TabColorTests(unittest.TestCase):
+    def test_colored_tab_uses_its_color_for_border_and_title(self):
+        tile = ts.Tile("t", "Agent", pane("s", 80, 24, ["x"]), busy=True, color=(200, 50, 10))
+        frame, _ = ts.render([tile], 60, 12)
+        self.assertIn("\x1b[0;38;2;200;50;10m┌", frame)      # border
+        self.assertIn("\x1b[0;38;2;200;50;10;1m 1 Agent", frame)  # bold title in tab color
+        self.assertIn(ts.BUSY_MARKER, frame)                 # activity marker
+        self.assertNotIn("\x1b[0;32m┌", frame)              # no green border override
+
+    def test_uncolored_tab_keeps_activity_border(self):
+        idle = ts.Tile("a", "Idle", pane("s1", 80, 24, ["x"]))
+        busy = ts.Tile("b", "Busy", pane("s2", 80, 24, ["x"]), busy=True)
+        frame, _ = ts.render([idle, busy], 100, 12)
+        self.assertIn("\x1b[0;90m┌", frame)
+        self.assertIn("\x1b[0;32m┌", frame)
+        screen = "\n".join(screen_from_frame(frame, 100, 12))
+        self.assertIn("● ", screen)
+        self.assertEqual(screen.count("●"), 1)
+
+
 class CropTests(unittest.TestCase):
     def test_crop_wide_chars(self):
         text, used = ts.crop_runs([("漢字テスト", "31", 10)], 5)

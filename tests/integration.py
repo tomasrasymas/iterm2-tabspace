@@ -91,6 +91,10 @@ async def main(connection):
         os.unlink(INPUT_LOG)
     app = await iterm2.async_get_app(connection)
     before = set(await overview_sessions(app))
+    if before:
+        print("An Overview tab is already open. Close it (press q in it) before running the "
+              "integration test, so the test never touches your own tabs.")
+        sys.exit(2)
 
     # --- build the test window: 3 tabs, 1/2/3 panes -------------------------
     win = await iterm2.Window.async_create(connection, command=agent_cmd("Alpha1"))
@@ -127,6 +131,33 @@ async def main(connection):
         check("pane output visible (Alpha2, Beta3)", ok,
               " | ".join(l.strip()[:60] for l in text.splitlines() if "Alpha" in l or "Beta" in l)[:600])
         check("header present", "Tabspace ·" in text)
+
+        # --- tab color: border/title of a colored tab use that color --------------
+        tab_rgb = (230, 120, 20)
+        lp = iterm2.LocalWriteOnlyProfile()
+        col = iterm2.Color(*tab_rgb)
+        for setter in (lp.set_tab_color, lp.set_tab_color_light, lp.set_tab_color_dark):
+            setter(col)
+        for setter in (lp.set_use_tab_color, lp.set_use_tab_color_light, lp.set_use_tab_color_dark):
+            setter(True)
+        for sess in alpha.sessions:
+            await sess.async_set_profile_properties(lp)
+        found_rgb = None
+        for _ in range(16):
+            await asyncio.sleep(0.5)
+            sc = await ov.async_get_screen_contents()
+            for i in range(sc.number_of_lines):
+                line = sc.line(i)
+                x = line.string.find("T-Alpha")
+                if x >= 0:
+                    st = line.style_at(x)
+                    if st and st.fg_color and st.fg_color.is_rgb:
+                        rgb = st.fg_color.rgb
+                        found_rgb = (rgb.red, rgb.green, rgb.blue)
+                    break
+            if found_rgb == tab_rgb:
+                break
+        check("colored tab's title/border use its tab color", found_rgb == tab_rgb, str(found_rgb))
 
         # --- live updates -------------------------------------------------------
         await asyncio.sleep(2.5)

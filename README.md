@@ -1,7 +1,7 @@
 # Tabspace
 
 **Mission Control for iTerm2 tabs, inside a tab.** Press **⌘⌥O** and a dedicated
-*Overview* tab shows every other tab as a live, colored preview, including each
+**Tabspace** tab shows every other tab as a live, colored preview, including each
 tab's split-pane layout. Watch all your AI agents at once; click a preview to jump
 to that tab (or straight to the clicked pane).
 
@@ -19,7 +19,7 @@ to that tab (or straight to the clicked pane).
 * Tiles get a **green border** while their output is changing (busy) and grey when idle.
 * Opening, closing, renaming and reordering tabs is picked up automatically (within ~1 s).
 * Tabs from all iTerm2 windows are shown (labelled `W1`, `W2`, … when you have several).
-* Pressing the shortcut again reuses the same Overview tab. Press it *on* the Overview
+* Pressing the shortcut again reuses the same Tabspace tab. Press it *on* the Tabspace tab
   to go back to where you were.
 
 ## Requirements
@@ -62,18 +62,18 @@ The installer:
 * iTerm2 offers to **download its Python runtime** the first time any script runs.
   Click OK/Download.
 
-Re-running `./install.sh` upgrades in place; open Overview tabs reconnect on their own.
+Re-running `./install.sh` upgrades in place; open Tabspace tabs reconnect on their own.
 
 ## Use
 
 | Action | Result |
 |---|---|
-| **⌘⌥O** | Open the Overview tab, or switch to it if it exists |
-| **⌘⌥O** while on the Overview | Go back to the tab you came from |
+| **⌘⌥O** | Open the Tabspace tab, or switch to it if it exists |
+| **⌘⌥O** while on the Tabspace tab | Go back to the tab you came from |
 | Click a pane in a preview | Switch to that tab and focus that pane |
 | Click a tile's border/title | Switch to that tab |
 | **1**–**9** | Switch to tile *n* |
-| **q** | Close the Overview tab |
+| **q** | Close the Tabspace tab |
 
 Each pane preview shows its **latest lines** (bottom of the screen / where the cursor is),
 cropped to fit, at your normal font size so it stays readable.
@@ -92,7 +92,7 @@ Edit `~/.config/tabspace/config.json`:
 
 * `shortcut`: modifiers `cmd`, `opt`/`alt`, `ctrl`, `shift` plus a letter, digit or
   `f1`–`f20`, e.g. `"ctrl+opt+space"`, `"cmd+shift+f2"`.
-* `refresh_seconds`: how often previews refresh while the Overview is visible (min 0.25).
+* `refresh_seconds`: how often previews refresh while the Tabspace tab is visible (min 0.25).
 * `activity_seconds`: how long a tile stays green after its output changes.
 
 Then restart Tabspace: re-run `./install.sh`, or use **Scripts → Manage → Console**,
@@ -109,7 +109,7 @@ and enter `tabspace_toggle()`.
 # or: curl -fsSL https://raw.githubusercontent.com/tomasrasymas/iterm2-tabspace/main/uninstall.sh | bash
 ```
 
-This closes Overview tabs, stops the service, and removes the script and
+This closes Tabspace tabs, stops the service, and removes the script and
 `~/.config/tabspace`. Your other tabs and running programs are not touched. It does not
 turn off the Python API (other scripts may need it). If you added a key binding
 yourself, remove it in Settings → Keys.
@@ -119,15 +119,15 @@ yourself, remove it in Settings → Keys.
 Tabspace is an iTerm2 [Python API](https://iterm2.com/python-api/) AutoLaunch script with two roles:
 
 * **Service.** It runs in the background inside iTerm2's script runtime and tracks
-  windows, tabs and split layouts. While an Overview tab is visible, it reads each
+  windows, tabs and split layouts. While an Tabspace tab is visible, it reads each
   pane's screen contents (text plus colors and attributes) about once a second and
-  renders the grid. When no Overview is visible it reads nothing, so idle CPU is about 0%.
-* **Viewer.** The Overview tab runs `tabspace.py --viewer`, a tiny client that only
+  renders the grid. When no Tabspace tab is visible it reads nothing, so idle CPU is about 0%.
+* **Viewer.** The Tabspace tab runs `tabspace.py --viewer`, a tiny client that only
   draws frames and reports clicks and keys to the service over a private Unix socket
   (mode 0600).
 
 Read-only by design. The service only calls API methods that *read* sessions, plus
-"activate tab/pane" for navigation and "close" for the Overview tab itself. It never
+"activate tab/pane" for navigation and "close" for the Tabspace tab itself. It never
 sends text, resizes, or restarts anything. The integration test runs fake agents that
 log any byte of input they receive, and checks that the log stays empty.
 
@@ -135,7 +135,7 @@ log any byte of input they receive, and checks that the log stays empty.
 
 * **Previews are rebuilt from text, not pixel thumbnails.** iTerm2 3.7 can screenshot
   a pane (`Session.async_screenshot`), but scaled down to a tile those images are
-  unreadable, and the Overview tab can't crop them without extra dependencies. Rebuilt
+  unreadable, and the Tabspace tab can't crop them without extra dependencies. Rebuilt
   text keeps the latest lines readable. Images and inline graphics in panes aren't shown.
 * **Not a web page.** iTerm2's built-in browser needs a separate Browser Plugin
   download, which would make installing harder, so Tabspace draws in a normal terminal tab.
@@ -149,7 +149,7 @@ log any byte of input they receive, and checks that the log stays empty.
 
 ## Troubleshooting
 
-* **The Overview says "Waiting for the Tabspace service…"**: the service isn't running.
+* **The Tabspace tab says "Waiting for the Tabspace service…"**: the service isn't running.
   Use **Scripts → AutoLaunch → tabspace.py**, or check that the Python API is enabled.
 * **⌘⌥O does nothing**: look in **Scripts → Manage → Console → tabspace.py** for
   `Shortcut … active` or an error. Another app may own the shortcut; pick a different one.
