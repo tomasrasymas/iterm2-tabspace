@@ -118,7 +118,20 @@ if iterm_running; then
     info "Open iTerm2 > Settings > General > Magic, untick and re-tick 'Enable Python API',"
     info "then run: Scripts menu > AutoLaunch > tabspace.py (or restart iTerm2)."
   else
-    if osascript -e 'tell application "iTerm2" to launch API script named "tabspace.py"' >/dev/null 2>&1; then
+    # iTerm2 picks up a newly added script a moment after the file appears
+    # (e.g. on a fresh install right after an uninstall), so retry briefly.
+    started=0
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+      if osascript -e 'tell application "iTerm2" to launch API script named "tabspace.py"' >/dev/null 2>&1; then
+        for _ in 1 2 3 4 5 6; do
+          pgrep -f "Scripts/AutoLaunch/tabspace.py$" >/dev/null 2>&1 && { started=1; break; }
+          sleep 0.5
+        done
+        break
+      fi
+      sleep 0.5
+    done
+    if [ "$started" = "1" ]; then
       info "Started Tabspace."
     else
       info "Start it from iTerm2's menu: Scripts > AutoLaunch > tabspace.py (or restart iTerm2)."
