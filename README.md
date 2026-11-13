@@ -5,14 +5,7 @@
 tab's split-pane layout. Watch all your AI agents at once; click a preview to jump
 to that tab (or straight to the clicked pane).
 
-```
- Tabspace · 6 tabs                                click a preview or press 1-9 to switch · q closes overview
-┌ 1 Work ─────────────────────┐┌ 2 API agent ────────────────┐┌ 3 Frontend agent ───────────┐
-│ ✓ tests passed   │ $ git st…││ Reading src/api/routes.py   ││ ● Editing Button.tsx        │
-│ ❯                │──────────││ ✻ Thinking… (12s)           ││ ❯ Done. 3 files changed     │
-│                  │ ❯ npm ru…││                             ││                             │
-└─────────────────────────────┘└─────────────────────────────┘└─────────────────────────────┘
-```
+![Tabspace demo: ⌘⌥O opens a live overview of all tabs; click a pane or press a number to jump to it](docs/tabspace-demo.gif)
 
 * Your tabs, panes and running programs are untouched: no merging into splits, no tmux.
 * Previews are **read-only**. Clicking only switches tabs and never sends input to an agent.
